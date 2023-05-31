@@ -58,6 +58,7 @@ char *ciphers = NULL;
 bool ssl = false;
 char *opt_file = NULL;
 char *opt_group = NULL;
+char *slave_connection_name = NULL;
 unsigned int db_port = MYSQL_PORT;
 int check_slave = 0, warn_sec = 0, crit_sec = 0;
 int ignore_auth = 0;
@@ -110,6 +111,7 @@ main (int argc, char **argv)
 	char *error = NULL;
 	char slaveresult[SLAVERESULTSIZE];
 	char* perf;
+	char *query;
 
         perf = strdup ("");
 
@@ -206,12 +208,20 @@ main (int argc, char **argv)
 	}
 
 	if(check_slave) {
+		/* build query */
+		if (strcmp(slave_connection_name, "") != 0) {
+			xasprintf(&query, "show slave '%s' status", slave_connection_name);
+		} else {
+			xasprintf(&query, "show slave status");
+		}
+
 		/* check the slave status */
-		if (mysql_query (&mysql, "show slave status") != 0) {
+		if (mysql_query (&mysql, query) != 0) {
 			error = strdup(mysql_error(&mysql));
 			mysql_close (&mysql);
 			die (STATE_CRITICAL, _("slave query error: %s\n"), error);
 		}
+		free(query);
 
 		/* store the result */
 		if ( (res = mysql_store_result (&mysql)) == NULL) {
@@ -352,6 +362,7 @@ process_arguments (int argc, char **argv)
 		{"critical", required_argument, 0, 'c'},
 		{"warning", required_argument, 0, 'w'},
 		{"check-slave", no_argument, 0, 'S'},
+		{"slave-connection-name", no_argument, 0, 'N'},
 		{"ignore-auth", no_argument, 0, 'n'},
 		{"verbose", no_argument, 0, 'v'},
 		{"version", no_argument, 0, 'V'},
@@ -369,7 +380,7 @@ process_arguments (int argc, char **argv)
 		return ERROR;
 
 	while (1) {
-		c = getopt_long (argc, argv, "hlvVnSP:p:u:d:H:s:c:w:a:k:C:D:L:f:g:", longopts, &option);
+		c = getopt_long (argc, argv, "hlvVnSP:p:u:d:H:s:c:w:a:k:C:D:L:f:g:N:", longopts, &option);
 
 		if (c == -1 || c == EOF)
 			break;
@@ -430,6 +441,9 @@ process_arguments (int argc, char **argv)
 			break;
 		case 'S':
 			check_slave = 1;							/* check-slave */
+			break;
+		case 'N':
+			slave_connection_name = optarg;						/* slave-connection-name */
 			break;
 		case 'n':
 			ignore_auth = 1;							/* ignore-auth */
@@ -497,6 +511,9 @@ validate_arguments (void)
 	if (db == NULL)
 		db = strdup("");
 
+	if (slave_connection_name == NULL)
+		slave_connection_name = strdup("");
+
 	return OK;
 }
 
@@ -541,6 +558,8 @@ print_help (void)
   printf ("    %s\n", _("Your clear-text password could be visible as a process table entry"));
   printf (" %s\n", "-S, --check-slave");
   printf ("    %s\n", _("Check if the slave thread is running properly."));
+  printf (" %s\n", "-N, --slave-connection-name");
+  printf ("    %s\n", _("Connection name if using multi-source replication."));
   printf (" %s\n", "-w, --warning");
   printf ("    %s\n", _("Exit with WARNING status if slave server is more than INTEGER seconds"));
   printf ("    %s\n", _("behind master"));
